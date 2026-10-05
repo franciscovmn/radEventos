@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Criar conta - Eventos do campus{% endblock %}
+{% block content %}
+<section class="cartao formulario conta">
+    <h1>Criar conta</h1>
+    <p>Cadastre-se para se inscrever nos eventos e montar sua agenda.</p>
+    <form method="post">
+        {% csrf_token %}{{ form.as_p }}
+        <button class="botao" type="submit">Criar conta</button>
+    </form>
+    <p>Já tem conta? <a href="{% url 'login' %}">Entre.</a></p>
+</section>
+{% endblock %}

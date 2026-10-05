@@ -1,0 +1,39 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Eventos do campus{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/estilo.css' %}">
+</head>
+<body>
+    <header class="cabecalho">
+        <nav class="container navegacao" aria-label="Menu principal">
+            <a class="marca" href="{% url 'eventos:lista' %}">Eventos do campus</a>
+            <div class="links">
+                <a href="{% url 'eventos:lista' %}">Programação</a>
+                {% if user.is_authenticated %}
+                    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
+                    <span class="usuario">{{ user.username }}</span>
+                    <form method="post" action="{% url 'logout' %}">
+                        {% csrf_token %}<button class="botao pequeno secundario" type="submit">Sair</button>
+                    </form>
+                {% else %}
+                    <a href="{% url 'login' %}">Entrar</a>
+                    <a class="botao pequeno" href="{% url 'cadastro' %}">Criar conta</a>
+                {% endif %}
+            </div>
+        </nav>
+    </header>
+    <main class="container conteudo">
+        {% if messages %}
+            <div aria-live="polite">
+                {% for message in messages %}<p class="mensagem {{ message.tags }}">{{ message }}</p>{% endfor %}
+            </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="container rodape">IFPB - Inscrições em eventos do campus</footer>
+</body>
+</html>

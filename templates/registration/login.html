@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Entrar - Eventos do campus{% endblock %}
+{% block content %}
+<section class="cartao formulario conta">
+    <h1>Entrar</h1>
+    <p>Acesse sua conta para participar dos eventos.</p>
+    <form method="post">
+        {% csrf_token %}{{ form.as_p }}
+        <input type="hidden" name="next" value="{{ next }}">
+        <button class="botao" type="submit">Entrar</button>
+    </form>
+    <p>Não tem conta? <a href="{% url 'cadastro' %}">Cadastre-se.</a></p>
+</section>
+{% endblock %}

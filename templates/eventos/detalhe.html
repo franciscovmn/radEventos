@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}{{ evento.nome }} - Eventos do campus{% endblock %}
+{% block content %}
+<a class="voltar" href="{% url 'eventos:lista' %}">Voltar para os eventos</a>
+<div class="titulo">
+    <div>
+        <p class="etiqueta">{{ evento.data_inicio|date:'d/m/Y' }} - {{ evento.data_fim|date:'d/m/Y' }}</p>
+        <h1>{{ evento.nome }}</h1>
+    </div>
+    <span class="selo {% if not evento.inscricoes_abertas %}fechado{% endif %}">
+        {% if evento.inscricoes_abertas %}Inscrições abertas{% else %}Inscrições fechadas{% endif %}
+    </span>
+</div>
+<div class="descricao">{{ evento.descricao|linebreaks }}</div>
+<h2 class="subtitulo">Programação</h2>
+<div class="programacao">
+    {% for atividade in atividades %}
+        <article class="cartao atividade">
+            <div class="horario"><strong>{{ atividade.inicio|date:'d/m' }}</strong><span>{{ atividade.inicio|date:'H:i' }} - {{ atividade.fim|date:'H:i' }}</span>{% if atividade.dias_diferentes %}<span>Fim: {{ atividade.fim|date:'d/m/Y H:i' }}</span>{% endif %}</div>
+            <div class="dados">
+                <p class="etiqueta">{{ atividade.get_tipo_display }}</p>
+                <h3>{{ atividade.titulo }}</h3>
+                <p>{{ atividade.descricao }}</p>
+                <p class="informacao">Responsável: {{ atividade.responsavel }}<br>Sala: {{ atividade.sala.nome }} - {{ atividade.sala.bloco }}<br>{{ atividade.vagas_restantes }} de {{ atividade.sala.capacidade }} vagas disponíveis</p>
+            </div>
+        </article>
+    {% empty %}<p class="vazio">A programação será cadastrada em breve.</p>{% endfor %}
+</div>
+{% endblock %}

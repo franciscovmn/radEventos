@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Programação - Eventos do campus{% endblock %}
+{% block content %}
+<div class="introducao">
+    <p class="etiqueta">Palestras, treinamentos e apresentações</p>
+    <h1>O campus tem encontro marcado.</h1>
+    <p>Conheça os eventos, confira a programação e escolha as atividades de que quer participar.</p>
+</div>
+<div class="grade">
+    {% for evento in eventos %}
+        <article class="cartao">
+            <span class="selo {% if not evento.inscricoes_abertas %}fechado{% endif %}">
+                {% if evento.inscricoes_abertas %}Inscrições abertas{% else %}Inscrições fechadas{% endif %}
+            </span>
+            <h2><a href="{{ evento.get_absolute_url }}">{{ evento.nome }}</a></h2>
+            <p class="data">{{ evento.data_inicio|date:'d/m/Y' }} - {{ evento.data_fim|date:'d/m/Y' }}</p>
+            <p>{{ evento.descricao|truncatewords:30 }}</p>
+            <a class="botao secundario" href="{{ evento.get_absolute_url }}">Ver programação</a>
+        </article>
+    {% empty %}<p class="vazio">Ainda não há eventos cadastrados.</p>{% endfor %}
+</div>
+{% endblock %}

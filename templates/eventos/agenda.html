@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Minha agenda - Eventos do campus{% endblock %}
+{% block content %}
+<p class="etiqueta">Suas inscrições</p>
+<h1>Minha agenda</h1>
+<p>As atividades que você escolheu, em ordem de data e horário.</p>
+<div class="tabela">
+    <table>
+        <thead><tr><th>Evento</th><th>Atividade</th><th>Sala</th><th>Horário</th><th>Ação</th></tr></thead>
+        <tbody>
+            {% for inscricao in inscricoes %}
+                <tr>
+                    <td><a href="{{ inscricao.atividade.evento.get_absolute_url }}">{{ inscricao.atividade.evento.nome }}</a></td>
+                    <td>{{ inscricao.atividade.titulo }}</td>
+                    <td>{{ inscricao.atividade.sala }}</td>
+                    <td>{{ inscricao.atividade.inicio|date:'d/m/Y H:i' }} - {{ inscricao.atividade.fim|date:'d/m/Y H:i' }}</td>
+                    <td><form method="post" action="{% url 'eventos:cancelar_atividade' inscricao.pk %}">{% csrf_token %}<button class="botao pequeno perigo" type="submit">Cancelar</button></form></td>
+                </tr>
+            {% empty %}<tr><td colspan="5">Você ainda não se inscreveu em atividades. <a href="{% url 'eventos:lista' %}">Confira a programação.</a></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

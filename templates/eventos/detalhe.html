@@ -16,6 +16,7 @@
     <div class="acoes">
         <a class="botao" href="{% url 'eventos:nova_atividade' evento.pk %}">Nova atividade</a>
         <a class="botao secundario" href="{% url 'eventos:editar' evento.pk %}">Editar evento</a>
+        <a class="botao secundario" href="{% url 'eventos:painel' evento.pk %}">Ver inscritos</a>
         <a class="botao perigo" href="{% url 'eventos:excluir' evento.pk %}">Excluir evento</a>
     </div>
 {% endif %}

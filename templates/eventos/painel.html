@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Inscritos - {{ evento.nome }}{% endblock %}
+{% block content %}
+<a class="voltar" href="{{ evento.get_absolute_url }}">Voltar para a programação</a>
+<p class="etiqueta">Painel do organizador</p>
+<h1>{{ evento.nome }}</h1>
+{% for atividade in atividades %}
+    <section class="cartao painel">
+        <h2>{{ atividade.titulo }}</h2>
+        <p>{{ atividade.sala }} - {{ atividade.inicio|date:'d/m/Y H:i' }}</p>
+        <p><strong>{{ atividade.total_inscritos }} inscritos</strong> - {{ atividade.vagas_restantes }} vagas restantes</p>
+        <div class="tabela">
+            <table>
+                <thead><tr><th>Participante</th><th>Inscrição em</th></tr></thead>
+                <tbody>
+                    {% for inscricao in atividade.inscricoes.all %}
+                        <tr><td>{{ inscricao.inscricao_evento.participante.username }}</td><td>{{ inscricao.data|date:'d/m/Y H:i' }}</td></tr>
+                    {% empty %}<tr><td colspan="2">Nenhum participante inscrito nesta atividade.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% empty %}<p class="vazio">Este evento ainda não tem atividades.</p>{% endfor %}
+{% endblock %}

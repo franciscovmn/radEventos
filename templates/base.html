@@ -14,6 +14,7 @@
             <div class="links">
                 <a href="{% url 'eventos:lista' %}">Programação</a>
                 {% if user.is_authenticated %}
+                    <a href="{% url 'eventos:agenda' %}">Minha agenda</a>
                     {% if perms.inscricoes.organizar_eventos %}
                         <a href="{% url 'eventos:novo' %}">Novo evento</a>
                     {% endif %}

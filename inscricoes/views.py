@@ -167,6 +167,32 @@ class AtividadeDeleteView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DeleteView
         return self.object.evento.get_absolute_url()
 
 
+class AgendaListView(LoginRequiredMixin, ListView):
+    template_name = "eventos/agenda.html"
+    context_object_name = "inscricoes"
+
+    def get_queryset(self):
+        return InscricaoAtividade.objects.filter(
+            inscricao_evento__participante=self.request.user
+        ).select_related("atividade__evento", "atividade__sala").order_by("atividade__inicio", "pk")
+
+
+class PainelOrganizadorView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DetailView):
+    model = Evento
+    template_name = "eventos/painel.html"
+    context_object_name = "evento"
+    http_method_names = ["get", "head", "options"]
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        contexto["atividades"] = self.object.atividades.com_vagas().prefetch_related(
+            Prefetch("inscricoes", queryset=InscricaoAtividade.objects.select_related(
+                "inscricao_evento__participante"
+            ))
+        )
+        return contexto
+
+
 @login_required
 @require_POST
 def inscrever_evento(request, pk):

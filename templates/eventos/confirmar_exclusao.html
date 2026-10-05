@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Confirmar exclusão - Eventos do campus{% endblock %}
+{% block content %}
+<section class="cartao formulario">
+    <h1>Excluir {{ object }}</h1>
+    <p>A exclusão também remove as inscrições vinculadas. Deseja continuar?</p>
+    <form method="post">
+        {% csrf_token %}
+        <div class="acoes">
+            <button class="botao perigo" type="submit">Confirmar exclusão</button>
+            <a class="botao secundario" href="{% if object.evento %}{{ object.evento.get_absolute_url }}{% else %}{{ object.get_absolute_url }}{% endif %}">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

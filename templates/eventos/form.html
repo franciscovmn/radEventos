@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}{{ titulo_pagina }} - Eventos do campus{% endblock %}
+{% block content %}
+<section class="cartao formulario">
+    <h1>{{ titulo_pagina }}</h1>
+    {% if evento %}<p>Evento: {{ evento.nome }}</p>{% endif %}
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="acoes">
+            <button class="botao" type="submit">Salvar</button>
+            <a class="botao secundario" href="{% if evento %}{{ evento.get_absolute_url }}{% elif object %}{{ object.get_absolute_url }}{% else %}{% url 'eventos:lista' %}{% endif %}">Cancelar</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

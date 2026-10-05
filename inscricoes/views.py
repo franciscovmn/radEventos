@@ -78,3 +78,90 @@ class EventoDetailView(DetailView):
             and self.object.organizador_id == usuario.pk
         )
         return contexto
+
+
+class OrganizadorMixin(LoginRequiredMixin, PermissionRequiredMixin):
+    permission_required = "inscricoes.organizar_eventos"
+
+    @method_decorator(transaction.atomic)
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+class ObjetoDoOrganizadorMixin:
+    def get_object(self, queryset=None):
+        objeto = super().get_object(queryset)
+        evento = objeto if isinstance(objeto, Evento) else objeto.evento
+        if evento.organizador_id != self.request.user.pk:
+            raise PermissionDenied
+        return objeto
+
+
+class EventoCreateView(OrganizadorMixin, CreateView):
+    model = Evento
+    form_class = EventoForm
+    template_name = "eventos/form.html"
+    extra_context = {"titulo_pagina": "Novo evento"}
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["instance"] = Evento(organizador=self.request.user)
+        return kwargs
+
+
+class EventoUpdateView(OrganizadorMixin, ObjetoDoOrganizadorMixin, UpdateView):
+    model = Evento
+    form_class = EventoForm
+    template_name = "eventos/form.html"
+    extra_context = {"titulo_pagina": "Editar evento"}
+
+
+class EventoDeleteView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DeleteView):
+    model = Evento
+    template_name = "eventos/confirmar_exclusao.html"
+    success_url = reverse_lazy("eventos:lista")
+
+
+class AtividadeFormMixin:
+    model = Atividade
+    form_class = AtividadeForm
+    template_name = "eventos/form.html"
+
+    @cached_property
+    def evento(self):
+        if self.object:
+            return self.object.evento
+        evento = get_object_or_404(Evento, pk=self.kwargs["evento_pk"])
+        if evento.organizador_id != self.request.user.pk:
+            raise PermissionDenied
+        return evento
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        if self.object is None:
+            kwargs["instance"] = Atividade(evento=self.evento)
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        contexto["evento"] = self.evento
+        return contexto
+
+    def get_success_url(self):
+        return self.evento.get_absolute_url()
+
+
+class AtividadeCreateView(OrganizadorMixin, AtividadeFormMixin, CreateView):
+    extra_context = {"titulo_pagina": "Nova atividade"}
+
+
+class AtividadeUpdateView(OrganizadorMixin, ObjetoDoOrganizadorMixin, AtividadeFormMixin, UpdateView):
+    extra_context = {"titulo_pagina": "Editar atividade"}
+
+
+class AtividadeDeleteView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DeleteView):
+    model = Atividade
+    template_name = "eventos/confirmar_exclusao.html"
+
+    def get_success_url(self):
+        return self.object.evento.get_absolute_url()

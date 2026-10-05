@@ -12,6 +12,13 @@
     </span>
 </div>
 <div class="descricao">{{ evento.descricao|linebreaks }}</div>
+{% if pode_gerenciar %}
+    <div class="acoes">
+        <a class="botao" href="{% url 'eventos:nova_atividade' evento.pk %}">Nova atividade</a>
+        <a class="botao secundario" href="{% url 'eventos:editar' evento.pk %}">Editar evento</a>
+        <a class="botao perigo" href="{% url 'eventos:excluir' evento.pk %}">Excluir evento</a>
+    </div>
+{% endif %}
 <h2 class="subtitulo">Programação</h2>
 <div class="programacao">
     {% for atividade in atividades %}
@@ -22,6 +29,12 @@
                 <h3>{{ atividade.titulo }}</h3>
                 <p>{{ atividade.descricao }}</p>
                 <p class="informacao">Responsável: {{ atividade.responsavel }}<br>Sala: {{ atividade.sala.nome }} - {{ atividade.sala.bloco }}<br>{{ atividade.vagas_restantes }} de {{ atividade.sala.capacidade }} vagas disponíveis</p>
+                <div class="acoes">
+                    {% if pode_gerenciar %}
+                        <a class="botao pequeno secundario" href="{% url 'eventos:editar_atividade' atividade.pk %}">Editar</a>
+                        <a class="botao pequeno perigo" href="{% url 'eventos:excluir_atividade' atividade.pk %}">Excluir</a>
+                    {% endif %}
+                </div>
             </div>
         </article>
     {% empty %}<p class="vazio">A programação será cadastrada em breve.</p>{% endfor %}

@@ -19,6 +19,23 @@
         <a class="botao perigo" href="{% url 'eventos:excluir' evento.pk %}">Excluir evento</a>
     </div>
 {% endif %}
+<div class="faixa">
+    {% if inscricao %}
+        <div><strong>Você está inscrito neste evento.</strong><p>Escolha suas atividades na programação abaixo.</p></div>
+        <form method="post" action="{% url 'eventos:cancelar_evento' inscricao.pk %}">
+            {% csrf_token %}<button class="botao perigo" type="submit">Cancelar inscrição no evento</button>
+        </form>
+    {% elif evento.inscricoes_abertas %}
+        <div><strong>Participe do evento</strong><p>A inscrição no evento permite escolher suas atividades.</p></div>
+        {% if user.is_authenticated %}
+            <form method="post" action="{% url 'eventos:inscrever_evento' evento.pk %}">
+                {% csrf_token %}<button class="botao" type="submit">Inscrever-se no evento</button>
+            </form>
+        {% else %}
+            <a class="botao" href="{% url 'login' %}?next={{ request.path|urlencode }}">Entrar para se inscrever</a>
+        {% endif %}
+    {% else %}<p>Este evento não aceita novas inscrições.</p>{% endif %}
+</div>
 <h2 class="subtitulo">Programação</h2>
 <div class="programacao">
     {% for atividade in atividades %}
@@ -30,6 +47,18 @@
                 <p>{{ atividade.descricao }}</p>
                 <p class="informacao">Responsável: {{ atividade.responsavel }}<br>Sala: {{ atividade.sala.nome }} - {{ atividade.sala.bloco }}<br>{{ atividade.vagas_restantes }} de {{ atividade.sala.capacidade }} vagas disponíveis</p>
                 <div class="acoes">
+                    {% if atividade.inscricao_id %}
+                        <span class="selo">Inscrição confirmada</span>
+                        <form method="post" action="{% url 'eventos:cancelar_atividade' atividade.inscricao_id %}">
+                            {% csrf_token %}<button class="botao pequeno perigo" type="submit">Cancelar atividade</button>
+                        </form>
+                    {% elif atividade.vagas_restantes == 0 %}<span class="selo fechado">Lotada</span>
+                    {% elif atividade.conflito %}<span class="selo fechado">Conflito com sua agenda</span>
+                    {% elif atividade.pode_inscrever %}
+                        <form method="post" action="{% url 'eventos:inscrever_atividade' atividade.pk %}">
+                            {% csrf_token %}<button class="botao pequeno" type="submit">Inscrever-se na atividade</button>
+                        </form>
+                    {% endif %}
                     {% if pode_gerenciar %}
                         <a class="botao pequeno secundario" href="{% url 'eventos:editar_atividade' atividade.pk %}">Editar</a>
                         <a class="botao pequeno perigo" href="{% url 'eventos:excluir_atividade' atividade.pk %}">Excluir</a>

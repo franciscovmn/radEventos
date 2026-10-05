@@ -165,3 +165,70 @@ class AtividadeDeleteView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DeleteView
 
     def get_success_url(self):
         return self.object.evento.get_absolute_url()
+
+
+@login_required
+@require_POST
+def inscrever_evento(request, pk):
+    with transaction.atomic():
+        evento = get_object_or_404(Evento, pk=pk)
+        if evento.inscricoes.filter(participante=request.user).exists():
+            messages.error(request, "Você já está inscrito neste evento.")
+        else:
+            try:
+                InscricaoEvento.objects.create(evento=evento, participante=request.user)
+            except ValidationError as erro:
+                messages.error(request, " ".join(erro.messages))
+            else:
+                messages.success(request, "Inscrição no evento confirmada. Escolha suas atividades.")
+    return redirect(evento)
+
+
+@login_required
+@require_POST
+def inscrever_atividade(request, pk):
+    with transaction.atomic():
+        atividade = get_object_or_404(Atividade.objects.select_related("evento", "sala"), pk=pk)
+        inscricao = InscricaoEvento.objects.filter(
+            evento=atividade.evento, participante=request.user
+        ).first()
+        if inscricao is None:
+            messages.error(request, "Inscreva-se no evento antes de escolher uma atividade.")
+        elif atividade.inscricoes.filter(inscricao_evento=inscricao).exists():
+            messages.error(request, "Você já está inscrito nesta atividade.")
+        else:
+            try:
+                InscricaoAtividade.objects.create(inscricao_evento=inscricao, atividade=atividade)
+            except ValidationError as erro:
+                messages.error(request, " ".join(erro.messages))
+            else:
+                messages.success(request, "Inscrição na atividade confirmada.")
+    return redirect(atividade.evento)
+
+
+@login_required
+@require_POST
+def cancelar_evento(request, pk):
+    with transaction.atomic():
+        inscricao = get_object_or_404(InscricaoEvento.objects.select_related("evento"), pk=pk)
+        if inscricao.participante_id != request.user.pk:
+            raise PermissionDenied
+        evento = inscricao.evento
+        inscricao.delete()
+        messages.success(request, "Inscrição no evento e em suas atividades cancelada.")
+    return redirect(evento)
+
+
+@login_required
+@require_POST
+def cancelar_atividade(request, pk):
+    with transaction.atomic():
+        inscricao = get_object_or_404(
+            InscricaoAtividade.objects.select_related("inscricao_evento", "atividade__evento"), pk=pk
+        )
+        if inscricao.inscricao_evento.participante_id != request.user.pk:
+            raise PermissionDenied
+        evento = inscricao.atividade.evento
+        inscricao.delete()
+        messages.success(request, "Inscrição na atividade cancelada.")
+    return redirect(evento)

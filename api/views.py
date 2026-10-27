@@ -1,3 +1,6 @@
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework import mixins, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
@@ -15,6 +18,11 @@ from .serializers import (
 )
 
 
+@extend_schema(
+    request=AuthTokenSerializer,
+    responses={200: {"type": "object", "properties": {"token": {"type": "string"}}}},
+    description="Autentica com usuário e senha e retorna um token de acesso.",
+)
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -51,7 +59,16 @@ class AtividadeViewSet(ViewSetDoOrganizador):
 
     def get_queryset(self):
         if self.action in ("list", "retrieve"):
-            return Atividade.objects.com_vagas()
+            queryset = Atividade.objects.com_vagas()
+            termo = self.request.query_params.get("search", "").strip()
+            if termo:
+                queryset = queryset.filter(
+                    Q(titulo__icontains=termo) | Q(descricao__icontains=termo)
+                )
+            ordenacao = self.request.query_params.get("ordering", "inicio")
+            if ordenacao not in {"inicio", "-inicio"}:
+                ordenacao = "inicio"
+            return queryset.order_by(ordenacao, "pk")
         return Atividade.objects.select_related("evento", "sala")
 
     def perform_create(self, serializer):
@@ -89,3 +106,32 @@ class InscricaoAtividadeViewSet(InscricaoViewSet):
     def destroy(self, request, pk):
         servicos.cancelar_inscricao_em_atividade(request.user, pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    parameters=[OpenApiParameter("evento_id", int, OpenApiParameter.PATH)],
+    description="Retorna os dados públicos de um evento e suas atividades em ordem cronológica.",
+)
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def programacao_evento(request, evento_id):
+    evento = get_object_or_404(Evento.objects.select_related("organizador"), pk=evento_id)
+    atividades = Atividade.objects.com_vagas().filter(evento=evento).order_by("inicio", "pk")
+    return Response({
+        "evento": EventoSerializer(evento).data,
+        "atividades": AtividadeSerializer(atividades, many=True).data,
+    })
+
+
+@extend_schema(
+    description="Lista as atividades dos eventos em que o participante autenticado está inscrito, em ordem cronológica.",
+    responses={200: AtividadeSerializer(many=True)},
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def agenda_participante(request):
+    atividades = Atividade.objects.com_vagas().filter(
+        inscricoes__inscricao_evento__participante=request.user
+    ).distinct().order_by("inicio", "pk")
+    return Response(AtividadeSerializer(atividades, many=True).data)

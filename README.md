@@ -2,9 +2,15 @@
 
 Atividade de ponto extra de Rapid Application Development (RAD), curso de Sistemas para Internet, IFPB.
 
-## Integrante
+## Integrantes
 
-Francisco Viana Maia Neto.
+- Francisco Viana Maia Neto.
+- Murilo Maciel Rodrigues.
+
+Divisão do trabalho:
+
+- Francisco: configuração do DRF, token, serializers e ViewSets de salas, eventos, atividades e inscrições, permissões, tratamento de erros, testes da escrita e este README.
+- Murilo: a ideia de mover as regras e as operações de inscrição das views para uma camada de serviços compartilhada com a API, com o rascunho dessa camada (`obter_agenda_participante` e `obter_dados_evento` vêm dele), e a parte de leitura da API, com a programação do evento, a agenda do participante, a busca e a ordenação das atividades, a documentação OpenAPI e os testes dessa parte.
 
 ## Como executar
 
@@ -131,7 +137,8 @@ curl -X POST http://127.0.0.1:8000/api/inscricoes/atividades/ \
 | GET | `/api/eventos/` e `/api/eventos/{id}/` | Qualquer pessoa | Eventos |
 | POST | `/api/eventos/` | Organizador | Cria evento do usuário do token |
 | PUT, PATCH, DELETE | `/api/eventos/{id}/` | Organizador do evento | Altera ou exclui o evento |
-| GET | `/api/atividades/` e `/api/atividades/{id}/` | Qualquer pessoa | Atividades com nome da sala e vagas restantes |
+| GET | `/api/eventos/{id}/programacao/` | Qualquer pessoa | O evento e suas atividades em ordem cronológica, com nome da sala e vagas restantes |
+| GET | `/api/atividades/` e `/api/atividades/{id}/` | Qualquer pessoa | Atividades com nome da sala e vagas restantes. A lista é paginada e aceita `search` e `ordering` |
 | POST | `/api/atividades/` | Organizador do evento informado | Cria atividade |
 | PUT, PATCH, DELETE | `/api/atividades/{id}/` | Organizador do evento da atividade | Altera ou exclui a atividade |
 | GET, POST | `/api/inscricoes/eventos/` | Usuário autenticado | Lista as próprias inscrições ou se inscreve em um evento |
@@ -140,6 +147,18 @@ curl -X POST http://127.0.0.1:8000/api/inscricoes/atividades/ \
 | GET, POST | `/api/inscricoes/atividades/` | Usuário autenticado | Lista as próprias inscrições ou se inscreve em uma atividade |
 | GET | `/api/inscricoes/atividades/{id}/` | Dono da inscrição | Detalha a inscrição |
 | DELETE | `/api/inscricoes/atividades/{id}/` | Dono da inscrição | Cancela e devolve a vaga |
+| GET | `/api/agenda/` | Usuário autenticado | Atividades em que o usuário está inscrito, de todos os eventos, por data e hora |
+| GET | `/api/schema/` | Qualquer pessoa | Schema OpenAPI. Use `?format=json` para receber JSON |
+| GET | `/api/docs/` | Qualquer pessoa | Página de documentação navegável, em http://127.0.0.1:8000/api/docs/ |
+
+A lista de atividades usa 10 itens por página e a resposta traz `count`, `next`, `previous` e `results`. O parâmetro `search` procura o termo no título ou na descrição, e `ordering` aceita `inicio` ou `-inicio`.
+
+```bash
+curl "http://127.0.0.1:8000/api/atividades/?search=Django"
+curl "http://127.0.0.1:8000/api/atividades/?ordering=-inicio"
+curl "http://127.0.0.1:8000/api/eventos/1/programacao/"
+curl -H "Authorization: Token 2a76783415d3f7834dd54081085db647599833ab" "http://127.0.0.1:8000/api/agenda/"
+```
 
 Sem token, as operações protegidas respondem 401. Com token de quem não tem permissão, respondem 403. Erros de regra de negócio respondem 400 com JSON no formato `{"campo": ["mensagem"]}` ou `{"non_field_errors": ["mensagem"]}`.
 
@@ -157,7 +176,7 @@ Havia duas saídas: reescrever as regras nos serializers ou mover cada regra par
 
 - `ModeloValidado.save()` executa `full_clean()` dentro de uma transação. Qualquer caminho que grave no banco passa pelas mesmas validações: formulário, Admin, serializer ou shell.
 - Os serializers apenas declaram campos. O `ModelSerializer` chama o `save()` do model, e `api/excecoes.py` converte o `ValidationError` do Django em resposta 400 com JSON. Nenhuma mensagem de regra é escrita na API.
-- Operações que envolvem mais de um model ficam em `inscricoes/servicos.py`: inscrever no evento, inscrever em atividade e os dois cancelamentos. As views do site e os serializers e viewsets da API chamam essas mesmas funções, que fazem a consulta e a gravação em uma única transação.
+- A ideia de extrair as operações para uma camada de serviços foi do Murilo. Operações que envolvem mais de um model ficam em `inscricoes/servicos.py`: inscrever no evento, inscrever em atividade e os dois cancelamentos. As views do site e os serializers e viewsets da API chamam essas mesmas funções, que fazem a consulta e a gravação em uma única transação.
 - A permissão de organizador usa `Evento.pode_ser_gerenciado_por`, chamada pelas views do site e pela permissão `OrganizadorDoEvento` da API.
 - O organizador do evento e o participante da inscrição vêm de `request.user`. Os campos são somente leitura nos serializers, e qualquer valor enviado no corpo é ignorado.
 - As vagas restantes são calculadas por `Count` sobre as inscrições, na consulta `com_vagas()`, ou contadas na hora após uma gravação. Nenhum campo guarda esse número.
@@ -167,6 +186,8 @@ Havia duas saídas: reescrever as regras nos serializers ou mover cada regra par
 - `SalaViewSet`, `EventoViewSet` e `AtividadeViewSet` usam ViewSet com router. São recursos com listagem, detalhe e alteração, e o `ModelViewSet` entrega os endpoints padronizados. As permissões variam por ação em `get_permissions`.
 - `InscricaoEventoViewSet` e `InscricaoAtividadeViewSet` também usam router, com `GenericViewSet` e apenas criar, listar e detalhar. O `destroy` é escrito à mão porque criar e cancelar chamam as funções de `servicos.py` em vez de gravar direto pelo serializer, o que mantém a consulta e a gravação na mesma transação.
 - `obter_token` usa `@api_view`. É uma ação sem recurso e sem model: recebe usuário e senha e devolve um token. A view de função é o caminho mais curto e dispensa autenticação e permissão padrão.
+- `programacao_evento` e `agenda_participante` também usam `@api_view`. São consultas específicas e não um CRUD de um único recurso: uma reúne o evento e suas atividades em uma resposta, e a outra cruza as inscrições do usuário autenticado com as atividades de todos os eventos. A agenda filtra pelo usuário do token e não aceita participante no JSON.
+- A busca, a ordenação e a paginação operam sobre o `QuerySet`, antes da serialização, e os parâmetros aparecem na página de documentação.
 
 ### Teste da seção 8
 
@@ -197,11 +218,13 @@ python manage.py test
 
 Os testes usam um banco separado. Os 29 de `inscricoes/tests.py` cobrem o site: os 27 critérios de aceitação, autenticação, propriedade das rotas, lotação, conflitos entre eventos, cancelamentos, isolamento da agenda, painel e proteção CSRF. Também verificam intervalos adjacentes, os casos de sobreposição, edições que invalidariam inscrições e envios simultâneos para a última vaga, para horários conflitantes e para a mesma sala.
 
-Os 43 de `api/tests.py` cobrem a API: obtenção de token, recusa de sessão e de token inválido, leitura pública, permissões de organizador, propriedade de eventos e atividades, erros de validação em JSON, inscrição e cancelamento no evento e nas atividades, lotação, conflitos de horário, dono da inscrição e envios simultâneos para a última vaga e para horários conflitantes.
+Os 7 de `api/tests_leitura.py` cobrem a leitura: lista de eventos e programação públicas, nome da sala e vagas restantes, agenda com token, isolada por usuário e em ordem, vagas da agenda considerando outros inscritos, paginação, busca, ordenação e documentação OpenAPI.
+
+Os 43 de `api/tests.py` cobrem a escrita e as inscrições na API: obtenção de token, recusa de sessão e de token inválido, leitura pública, permissões de organizador, propriedade de eventos e atividades, erros de validação em JSON, inscrição e cancelamento no evento e nas atividades, lotação, conflitos de horário, dono da inscrição e envios simultâneos para a última vaga e para horários conflitantes.
 
 ## Requisitos pendentes
 
-Da atividade 06, ainda faltam a programação de um evento com suas atividades em um endpoint (RF3), a agenda do participante (RF7), a busca, a ordenação e a paginação configurada da lista de atividades (RF10) e a documentação OpenAPI (RF11). O desafio opcional não foi implementado.
+Nenhum dos requisitos obrigatórios. O desafio opcional de lista de espera e o da programação em uma única requisição não foram implementados.
 
 ## Entrega
 

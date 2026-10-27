@@ -13,8 +13,9 @@ from django.utils.functional import cached_property
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
+from . import servicos
 from .forms import AtividadeForm, EventoForm
-from .models import Atividade, Evento, InscricaoAtividade, InscricaoEvento
+from .models import Atividade, Evento, InscricaoAtividade
 
 
 class CadastroView(CreateView):
@@ -72,11 +73,7 @@ class EventoDetailView(DetailView):
 
         contexto["atividades"] = atividades
         contexto["inscricao"] = inscricao
-        contexto["pode_gerenciar"] = (
-            usuario.is_authenticated
-            and usuario.has_perm("inscricoes.organizar_eventos")
-            and self.object.organizador_id == usuario.pk
-        )
+        contexto["pode_gerenciar"] = self.object.pode_ser_gerenciado_por(usuario)
         return contexto
 
 
@@ -92,7 +89,7 @@ class ObjetoDoOrganizadorMixin:
     def get_object(self, queryset=None):
         objeto = super().get_object(queryset)
         evento = objeto if isinstance(objeto, Evento) else objeto.evento
-        if evento.organizador_id != self.request.user.pk:
+        if not evento.pode_ser_gerenciado_por(self.request.user):
             raise PermissionDenied
         return objeto
 
@@ -132,7 +129,7 @@ class AtividadeFormMixin:
         if self.object:
             return self.object.evento
         evento = get_object_or_404(Evento, pk=self.kwargs["evento_pk"])
-        if evento.organizador_id != self.request.user.pk:
+        if not evento.pode_ser_gerenciado_por(self.request.user):
             raise PermissionDenied
         return evento
 
@@ -196,65 +193,39 @@ class PainelOrganizadorView(OrganizadorMixin, ObjetoDoOrganizadorMixin, DetailVi
 @login_required
 @require_POST
 def inscrever_evento(request, pk):
-    with transaction.atomic():
-        evento = get_object_or_404(Evento, pk=pk)
-        if evento.inscricoes.filter(participante=request.user).exists():
-            messages.error(request, "Você já está inscrito neste evento.")
-        else:
-            try:
-                InscricaoEvento.objects.create(evento=evento, participante=request.user)
-            except ValidationError as erro:
-                messages.error(request, " ".join(erro.messages))
-            else:
-                messages.success(request, "Inscrição no evento confirmada. Escolha suas atividades.")
-    return redirect(evento)
+    try:
+        inscricao = servicos.inscrever_no_evento(request.user, pk)
+    except ValidationError as erro:
+        messages.error(request, " ".join(erro.messages))
+        return redirect("eventos:detalhe", pk=pk)
+    messages.success(request, "Inscrição no evento confirmada. Escolha suas atividades.")
+    return redirect(inscricao.evento)
 
 
 @login_required
 @require_POST
 def inscrever_atividade(request, pk):
-    with transaction.atomic():
-        atividade = get_object_or_404(Atividade.objects.select_related("evento", "sala"), pk=pk)
-        inscricao = InscricaoEvento.objects.filter(
-            evento=atividade.evento, participante=request.user
-        ).first()
-        if inscricao is None:
-            messages.error(request, "Inscreva-se no evento antes de escolher uma atividade.")
-        elif atividade.inscricoes.filter(inscricao_evento=inscricao).exists():
-            messages.error(request, "Você já está inscrito nesta atividade.")
-        else:
-            try:
-                InscricaoAtividade.objects.create(inscricao_evento=inscricao, atividade=atividade)
-            except ValidationError as erro:
-                messages.error(request, " ".join(erro.messages))
-            else:
-                messages.success(request, "Inscrição na atividade confirmada.")
+    atividade = get_object_or_404(Atividade.objects.select_related("evento"), pk=pk)
+    try:
+        servicos.inscrever_em_atividade(request.user, pk)
+    except ValidationError as erro:
+        messages.error(request, " ".join(erro.messages))
+    else:
+        messages.success(request, "Inscrição na atividade confirmada.")
     return redirect(atividade.evento)
 
 
 @login_required
 @require_POST
 def cancelar_evento(request, pk):
-    with transaction.atomic():
-        inscricao = get_object_or_404(InscricaoEvento.objects.select_related("evento"), pk=pk)
-        if inscricao.participante_id != request.user.pk:
-            raise PermissionDenied
-        evento = inscricao.evento
-        inscricao.delete()
-        messages.success(request, "Inscrição no evento e em suas atividades cancelada.")
+    evento = servicos.cancelar_inscricao_no_evento(request.user, pk)
+    messages.success(request, "Inscrição no evento e em suas atividades cancelada.")
     return redirect(evento)
 
 
 @login_required
 @require_POST
 def cancelar_atividade(request, pk):
-    with transaction.atomic():
-        inscricao = get_object_or_404(
-            InscricaoAtividade.objects.select_related("inscricao_evento", "atividade__evento"), pk=pk
-        )
-        if inscricao.inscricao_evento.participante_id != request.user.pk:
-            raise PermissionDenied
-        evento = inscricao.atividade.evento
-        inscricao.delete()
-        messages.success(request, "Inscrição na atividade cancelada.")
+    evento = servicos.cancelar_inscricao_em_atividade(request.user, pk)
+    messages.success(request, "Inscrição na atividade cancelada.")
     return redirect(evento)

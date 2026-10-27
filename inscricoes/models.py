@@ -66,6 +66,13 @@ class Evento(ModeloValidado):
     def get_absolute_url(self):
         return reverse("eventos:detalhe", args=[self.pk])
 
+    def pode_ser_gerenciado_por(self, usuario):
+        return (
+            usuario.is_authenticated
+            and usuario.has_perm("inscricoes.organizar_eventos")
+            and self.organizador_id == usuario.pk
+        )
+
     def clean(self):
         super().clean()
         if not self.data_inicio or not self.data_fim:

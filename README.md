@@ -1,6 +1,6 @@
 # Inscrições em eventos do campus
 
-Atividade de ponto extra de Rapid Application Development (RAD), curso de Sistemas para Internet, IFPB.
+Atividade 06 de Rapid Application Development (RAD), curso de Sistemas para Internet, IFPB: uma API REST ao lado do sistema de inscrições em eventos do campus.
 
 ## Integrantes
 
@@ -224,7 +224,7 @@ Os 43 de `api/tests.py` cobrem a escrita e as inscrições na API: obtenção de
 
 ## Requisitos pendentes
 
-Nenhum dos requisitos obrigatórios. O desafio opcional de lista de espera e o da programação em uma única requisição não foram implementados.
+Nenhum dos requisitos obrigatórios. O desafio opcional da programação em uma única requisição não foi implementado.
 
 ## Entrega
 

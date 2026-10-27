@@ -71,7 +71,7 @@ class AutenticacaoTests(ApiTestCase):
             "/api/token/", {"username": "participante4", "password": "errada"}, format="json"
         )
         self.assertEqual(resposta.status_code, 400)
-        self.assertFalse(Token.objects.filter(user=self.participante).exists())
+        self.assertNotIn("token", resposta.json())
 
     def test_token_invalido_e_recusado_ate_na_leitura(self):
         cliente = APIClient()

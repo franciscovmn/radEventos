@@ -4,12 +4,13 @@ from django.contrib.auth.models import Group, Permission, User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
 
 from inscricoes.models import Atividade, Evento, InscricaoAtividade, InscricaoEvento, Sala
 
 
 class Command(BaseCommand):
-    help = "Cadastra as contas e a programação de teste sem apagar os dados existentes."
+    help = "Cadastra as contas, os tokens e a programação de teste sem apagar os dados existentes."
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -25,6 +26,7 @@ class Command(BaseCommand):
                 usuario = criar(username=nome, password="Eventos@2026")
             if nome.startswith("organizador"):
                 usuario.groups.add(grupo)
+            Token.objects.get_or_create(user=usuario)
             contas[nome] = usuario
 
         pequena, _ = Sala.objects.get_or_create(
@@ -97,4 +99,4 @@ class Command(BaseCommand):
         InscricaoAtividade.objects.get_or_create(
             inscricao_evento=inscricao_jornada, atividade=cadastradas["Comunicação científica"]
         )
-        self.stdout.write(self.style.SUCCESS("Contas, salas, eventos e atividades cadastrados."))
+        self.stdout.write(self.style.SUCCESS("Contas, tokens, salas, eventos e atividades cadastrados."))

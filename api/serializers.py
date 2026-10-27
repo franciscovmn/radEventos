@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from inscricoes.models import Atividade, Evento, Sala
+from inscricoes import servicos
+from inscricoes.models import Atividade, Evento, InscricaoAtividade, InscricaoEvento, Sala
 
 
 class SalaSerializer(serializers.ModelSerializer):
@@ -38,3 +39,26 @@ class AtividadeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Uma atividade não pode mudar de evento.")
         return evento
 
+
+
+class InscricaoEventoSerializer(serializers.ModelSerializer):
+    participante = serializers.CharField(source="participante.username", read_only=True)
+
+    class Meta:
+        model = InscricaoEvento
+        fields = ["id", "evento", "participante", "data"]
+        validators = []
+
+    def create(self, validated_data):
+        return servicos.inscrever_no_evento(self.context["request"].user, validated_data["evento"].pk)
+
+
+class InscricaoAtividadeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InscricaoAtividade
+        fields = ["id", "atividade", "inscricao_evento", "data"]
+        read_only_fields = ["inscricao_evento"]
+        validators = []
+
+    def create(self, validated_data):
+        return servicos.inscrever_em_atividade(self.context["request"].user, validated_data["atividade"].pk)

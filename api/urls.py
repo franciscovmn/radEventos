@@ -9,4 +9,6 @@ router = DefaultRouter()
 router.register("salas", views.SalaViewSet)
 router.register("eventos", views.EventoViewSet)
 router.register("atividades", views.AtividadeViewSet, basename="atividade")
+router.register("inscricoes/eventos", views.InscricaoEventoViewSet, basename="inscricao-evento")
+router.register("inscricoes/atividades", views.InscricaoAtividadeViewSet, basename="inscricao-atividade")
 urlpatterns = [path("token/", views.obter_token, name="token")] + router.urls

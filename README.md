@@ -37,13 +37,15 @@ O comando não apaga dados existentes nem troca senhas de contas já cadastradas
 
 Todas as contas abaixo usam a senha `Eventos@2026`.
 
-| Conta | Usuário | Papel |
-| --- | --- | --- |
-| Uma | `admin` | Superusuário, cadastra salas pelo Admin |
-| Duas | `organizador2` | Organizador da Semana de Tecnologia e do Encontro de Egressos |
-| Três | `organizador3` | Organizador da Jornada Científica |
-| Quatro | `participante4` | Participante com atividades na agenda |
-| Cinco | `participante5` | Participante para ocupar a última vaga da Sala 101 |
+| Conta | Usuário | Papel | Token da API |
+| --- | --- | --- | --- |
+| Uma | `admin` | Superusuário, cadastra salas pelo Admin | `f3df960941f96bdbeb317f9a18b5aa80906117e3` |
+| Duas | `organizador2` | Organizador da Semana de Tecnologia e do Encontro de Egressos | `1d6f8fc09a452de40accdf08bb1eb544213ec247` |
+| Três | `organizador3` | Organizador da Jornada Científica | `2e7c83980f36ad7404fbc26f02cea6a3d8cb49cb` |
+| Quatro | `participante4` | Participante com atividades na agenda | `2a76783415d3f7834dd54081085db647599833ab` |
+| Cinco | `participante5` | Participante para ocupar a última vaga da Sala 101 | `599b412f3bba66ca11c7015d52525c14feef607b` |
+
+Os tokens estão no `db.sqlite3` entregue. Em um banco novo, `cadastrar_dados` cria tokens diferentes para as mesmas contas, que podem ser consultados com `python manage.py shell` ou obtidos em `POST /api/token/`.
 
 Os organizadores pertencem ao grupo `Organizadores`, com a permissão `inscricoes.organizar_eventos`. Contas criadas no cadastro público não recebem permissões de organização. Qualquer usuário autenticado pode participar dos eventos.
 
@@ -103,6 +105,89 @@ As páginas de organização exigem a permissão do grupo e conferem a proprieda
 
 Inscrever, cancelar, salvar, excluir e sair da conta usam POST com token CSRF. GET consulta páginas e apresenta formulários ou confirmações, sem alterar o estado do sistema. A confirmação de exclusão exige um segundo envio por POST.
 
+## API REST
+
+A API vive sob `/api/` e usa os mesmos models do site. O site HTML continua como antes, com sessão e formulários. A API identifica o usuário somente pelo cabeçalho `Authorization: Token <token>`, sem sessão e sem CSRF.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "participante5", "password": "Eventos@2026"}'
+
+curl http://127.0.0.1:8000/api/atividades/
+
+curl -X POST http://127.0.0.1:8000/api/inscricoes/atividades/ \
+  -H "Authorization: Token 599b412f3bba66ca11c7015d52525c14feef607b" \
+  -H "Content-Type: application/json" \
+  -d '{"atividade": 1}'
+```
+
+### Endpoints
+
+| Método | Caminho | Quem pode | Resultado |
+| --- | --- | --- | --- |
+| POST | `/api/token/` | Qualquer pessoa | Token do usuário e senha enviados |
+| GET | `/api/salas/` e `/api/salas/{id}/` | Qualquer pessoa | Salas e capacidades |
+| GET | `/api/eventos/` e `/api/eventos/{id}/` | Qualquer pessoa | Eventos |
+| POST | `/api/eventos/` | Organizador | Cria evento do usuário do token |
+| PUT, PATCH, DELETE | `/api/eventos/{id}/` | Organizador do evento | Altera ou exclui o evento |
+| GET | `/api/atividades/` e `/api/atividades/{id}/` | Qualquer pessoa | Atividades com nome da sala e vagas restantes |
+| POST | `/api/atividades/` | Organizador do evento informado | Cria atividade |
+| PUT, PATCH, DELETE | `/api/atividades/{id}/` | Organizador do evento da atividade | Altera ou exclui a atividade |
+| GET, POST | `/api/inscricoes/eventos/` | Usuário autenticado | Lista as próprias inscrições ou se inscreve em um evento |
+| GET | `/api/inscricoes/eventos/{id}/` | Dono da inscrição | Detalha a inscrição |
+| DELETE | `/api/inscricoes/eventos/{id}/` | Dono da inscrição | Cancela e remove as inscrições nas atividades |
+| GET, POST | `/api/inscricoes/atividades/` | Usuário autenticado | Lista as próprias inscrições ou se inscreve em uma atividade |
+| GET | `/api/inscricoes/atividades/{id}/` | Dono da inscrição | Detalha a inscrição |
+| DELETE | `/api/inscricoes/atividades/{id}/` | Dono da inscrição | Cancela e devolve a vaga |
+
+Sem token, as operações protegidas respondem 401. Com token de quem não tem permissão, respondem 403. Erros de regra de negócio respondem 400 com JSON no formato `{"campo": ["mensagem"]}` ou `{"non_field_errors": ["mensagem"]}`.
+
+### Onde as regras de negócio moram, e por quê
+
+Havia duas saídas: reescrever as regras nos serializers ou mover cada regra para um lugar que o site e a API enxerguem. A escolha foi não escrever regra nenhuma na camada da API.
+
+| Regra | Onde está |
+| --- | --- |
+| 1. Vagas limitadas pela capacidade da sala | `InscricaoAtividade.clean` em `inscricoes/models.py` |
+| 2. Sem duas atividades no mesmo horário | `InscricaoAtividade.clean`, e `Atividade.clean` quando o horário da atividade muda |
+| 3. Sem sobreposição na mesma sala | `Atividade.clean` |
+| 4. Atividade só para inscritos no evento | `InscricaoAtividade.clean` exige o mesmo evento, e `servicos.inscrever_em_atividade` recusa quem não tem inscrição no evento |
+| 5. Cancelar no evento cancela nas atividades | `on_delete=CASCADE` em `InscricaoAtividade.inscricao_evento` |
+
+- `ModeloValidado.save()` executa `full_clean()` dentro de uma transação. Qualquer caminho que grave no banco passa pelas mesmas validações: formulário, Admin, serializer ou shell.
+- Os serializers apenas declaram campos. O `ModelSerializer` chama o `save()` do model, e `api/excecoes.py` converte o `ValidationError` do Django em resposta 400 com JSON. Nenhuma mensagem de regra é escrita na API.
+- Operações que envolvem mais de um model ficam em `inscricoes/servicos.py`: inscrever no evento, inscrever em atividade e os dois cancelamentos. As views do site e os serializers e viewsets da API chamam essas mesmas funções, que fazem a consulta e a gravação em uma única transação.
+- A permissão de organizador usa `Evento.pode_ser_gerenciado_por`, chamada pelas views do site e pela permissão `OrganizadorDoEvento` da API.
+- O organizador do evento e o participante da inscrição vêm de `request.user`. Os campos são somente leitura nos serializers, e qualquer valor enviado no corpo é ignorado.
+- As vagas restantes são calculadas por `Count` sobre as inscrições, na consulta `com_vagas()`, ou contadas na hora após uma gravação. Nenhum campo guarda esse número.
+
+### ViewSet e view de função
+
+- `SalaViewSet`, `EventoViewSet` e `AtividadeViewSet` usam ViewSet com router. São recursos com listagem, detalhe e alteração, e o `ModelViewSet` entrega os endpoints padronizados. As permissões variam por ação em `get_permissions`.
+- `InscricaoEventoViewSet` e `InscricaoAtividadeViewSet` também usam router, com `GenericViewSet` e apenas criar, listar e detalhar. O `destroy` é escrito à mão porque criar e cancelar chamam as funções de `servicos.py` em vez de gravar direto pelo serializer, o que mantém a consulta e a gravação na mesma transação.
+- `obter_token` usa `@api_view`. É uma ação sem recurso e sem model: recebe usuário e senha e devolve um token. A view de função é o caminho mais curto e dispensa autenticação e permissão padrão.
+
+### Teste da seção 8
+
+Regra escolhida: a número 1, a atividade não passa da capacidade da sala. A `Django na prática` acontece na Sala 101, que tem 2 vagas. `participante4` já ocupava uma e `participante5` ocupou a última. `participante6`, já inscrito no evento, tentou entrar.
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/api/inscricoes/atividades/ \
+  -H "Authorization: Token <token do participante6>" \
+  -H "Content-Type: application/json" \
+  -d '{"atividade": 1}'
+```
+
+| Pergunta | Resposta |
+| --- | --- |
+| Código HTTP | 400 |
+| Mensagem no corpo | `{"non_field_errors": ["Esta atividade está lotada."]}` |
+| Arquivo e método | `inscricoes/models.py`, `InscricaoAtividade.clean` |
+| O site usa o mesmo código? | Sim |
+
+No site, o mesmo participante enviou `POST /atividades/1/inscrever/` e foi redirecionado ao evento com a mensagem "Esta atividade está lotada.". Os dois caminhos chamam `servicos.inscrever_em_atividade`, que cria a inscrição com `InscricaoAtividade.objects.create`. Esse `create` chama `save()`, que executa `full_clean()` e chega ao mesmo `InscricaoAtividade.clean`. Há uma única cópia da regra.
+
 ## Verificação
 
 ```bash
@@ -110,11 +195,13 @@ python manage.py check
 python manage.py test
 ```
 
-Os 29 testes usam um banco separado. Cobrem os 27 critérios de aceitação, autenticação, propriedade das rotas, lotação, conflitos entre eventos, cancelamentos, isolamento da agenda, painel e proteção CSRF. Também verificam intervalos adjacentes, os casos de sobreposição, edições que invalidariam inscrições e envios simultâneos para a última vaga, para horários conflitantes e para a mesma sala.
+Os testes usam um banco separado. Os 29 de `inscricoes/tests.py` cobrem o site: os 27 critérios de aceitação, autenticação, propriedade das rotas, lotação, conflitos entre eventos, cancelamentos, isolamento da agenda, painel e proteção CSRF. Também verificam intervalos adjacentes, os casos de sobreposição, edições que invalidariam inscrições e envios simultâneos para a última vaga, para horários conflitantes e para a mesma sala.
+
+Os 43 de `api/tests.py` cobrem a API: obtenção de token, recusa de sessão e de token inválido, leitura pública, permissões de organizador, propriedade de eventos e atividades, erros de validação em JSON, inscrição e cancelamento no evento e nas atividades, lotação, conflitos de horário, dono da inscrição e envios simultâneos para a última vaga e para horários conflitantes.
 
 ## Requisitos pendentes
 
-Nenhum dos requisitos obrigatórios. O desafio opcional de lista de espera não foi implementado.
+Da atividade 06, ainda faltam a programação de um evento com suas atividades em um endpoint (RF3), a agenda do participante (RF7), a busca, a ordenação e a paginação configurada da lista de atividades (RF10) e a documentação OpenAPI (RF11). O desafio opcional não foi implementado.
 
 ## Entrega
 

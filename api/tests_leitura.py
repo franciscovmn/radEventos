@@ -4,7 +4,7 @@ from django.test import TestCase
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
-from inscricoes.models import Atividade, Evento
+from inscricoes.models import Atividade, Evento, InscricaoAtividade, InscricaoEvento
 
 
 class LeituraApiTests(TestCase):
@@ -60,6 +60,15 @@ class LeituraApiTests(TestCase):
         self.assertNotIn(self.atividade.pk, ids_outro)
         self.assertIn(self.atividade.pk, ids_participante)
 
+    def test_vagas_da_agenda_consideram_inscricoes_de_outros_participantes(self):
+        InscricaoAtividade.objects.create(
+            inscricao_evento=InscricaoEvento.objects.get(evento=self.evento, participante=self.outro_participante),
+            atividade=self.atividade,
+        )
+        agenda = self.cliente_com_token(self.participante).get("/api/agenda/").json()
+        vagas = {item["id"]: item["vagas_restantes"] for item in agenda}
+        self.assertEqual(vagas[self.atividade.pk], 0)
+
     def test_lista_atividades_tem_paginacao_busca_e_ordenacao(self):
         cliente = APIClient()
         resposta = cliente.get("/api/atividades/")
@@ -80,9 +89,12 @@ class LeituraApiTests(TestCase):
         self.assertEqual(inicios, sorted(inicios, reverse=True))
 
     def test_documentacao_openapi_e_disponivel(self):
-        schema = APIClient().get("/api/schema/")
+        schema = APIClient().get("/api/schema/?format=json")
         self.assertEqual(schema.status_code, 200)
         self.assertIn("openapi", schema.json())
+
+        self.assertIn("/api/eventos/{evento_id}/programacao/", schema.json()["paths"])
+        self.assertIn("/api/agenda/", schema.json()["paths"])
 
         docs = APIClient().get("/api/docs/")
         self.assertEqual(docs.status_code, 200)

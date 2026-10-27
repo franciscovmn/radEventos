@@ -1,7 +1,7 @@
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from rest_framework import mixins, status, viewsets
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.serializers import AuthTokenSerializer
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -54,6 +54,15 @@ class EventoViewSet(ViewSetDoOrganizador):
         serializer.save(organizador=self.request.user)
 
 
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter("search", str, description="Termo procurado no título ou na descrição."),
+        OpenApiParameter(
+            "ordering", str, enum=["inicio", "-inicio"],
+            description="Ordena pela data de início. Use -inicio para a ordem decrescente.",
+        ),
+    ]),
+)
 class AtividadeViewSet(ViewSetDoOrganizador):
     serializer_class = AtividadeSerializer
 
@@ -111,6 +120,10 @@ class InscricaoAtividadeViewSet(InscricaoViewSet):
 @extend_schema(
     parameters=[OpenApiParameter("evento_id", int, OpenApiParameter.PATH)],
     description="Retorna os dados públicos de um evento e suas atividades em ordem cronológica.",
+    responses={200: inline_serializer("ProgramacaoEvento", {
+        "evento": EventoSerializer(),
+        "atividades": AtividadeSerializer(many=True),
+    })},
 )
 @api_view(["GET"])
 @authentication_classes([])

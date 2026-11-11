@@ -412,3 +412,1153 @@ class ConcorrenciaApiTests(TransactionTestCase):
         envios = [(usuario, "/api/inscricoes/atividades/", {"atividade": atividade.pk}) for atividade in atividades]
         self.assertEqual(sorted(self.enviar_juntos(envios)), [201, 400])
         self.assertEqual(InscricaoAtividade.objects.filter(inscricao_evento__participante=usuario).count(), 1)
+
+# novos testes
+
+from datetime import date, datetime, timedelta
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.utils import timezone
+from django.urls import reverse
+
+from rest_framework import status
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APITestCase
+
+Usuario = get_user_model()
+
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
+
+def data_hora(dia: int, hora: int, minuto: int = 0) -> datetime:
+    """
+    Cria um datetime compatível com a configuração USE_TZ do Django.
+    """
+    valor = datetime(2026, 11, dia, hora, minuto)
+
+    if timezone.is_aware(timezone.now()):
+        return timezone.make_aware(
+            valor,
+            timezone.get_current_timezone()
+        )
+
+    return valor
+
+class BaseAPITestCase(APITestCase):
+    """
+    Classe-base dos testes da API.
+
+    Centraliza:
+    - Usuários;
+    - Tokens;
+    - Salas;
+    - Evento e atividade iniciais;
+    - Métodos auxiliares para autenticação e criação de dados.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+
+        # -----------------------------
+        # Usuários
+        # -----------------------------
+
+        cls.organizador = Usuario.objects.create_user(
+            username="organizador_api",
+            email="organizador@example.test",
+            password="senha-teste-123",
+        )
+
+        cls.outro_organizador = Usuario.objects.create_user(
+            username="outro_organizador_api",
+            email="outro.organizador@example.test",
+            password="senha-teste-123",
+        )
+
+        cls.participante_a = Usuario.objects.create_user(
+            username="participante_api_a",
+            email="participante.a@example.test",
+            password="senha-teste-123",
+        )
+
+        cls.participante_b = Usuario.objects.create_user(
+            username="participante_api_b",
+            email="participante.b@example.test",
+            password="senha-teste-123",
+        )
+
+        cls.participante_c = Usuario.objects.create_user(
+            username="participante_api_c",
+            email="participante.c@example.test",
+            password="senha-teste-123",
+        )
+
+        # -----------------------------
+        # Permissão de organizador
+        # -----------------------------
+
+        permissao = Permission.objects.get(
+            codename="organizar_eventos",
+            content_type__app_label="inscricoes",
+            content_type__model="evento",
+        )
+
+        cls.organizador.user_permissions.add(permissao)
+        cls.outro_organizador.user_permissions.add(permissao)
+
+        # -----------------------------
+        # Tokens
+        # -----------------------------
+
+        cls.token_organizador = Token.objects.create(
+            user=cls.organizador
+        )
+
+        cls.token_outro_organizador = Token.objects.create(
+            user=cls.outro_organizador
+        )
+
+        cls.token_participante_a = Token.objects.create(
+            user=cls.participante_a
+        )
+
+        cls.token_participante_b = Token.objects.create(
+            user=cls.participante_b
+        )
+
+        cls.token_participante_c = Token.objects.create(
+            user=cls.participante_c
+        )
+
+        # -----------------------------
+        # Salas
+        # -----------------------------
+
+        cls.sala = Sala.objects.create(
+            nome="Laboratório API",
+            bloco="Bloco A",
+            capacidade=2,
+        )
+
+        cls.sala_alternativa = Sala.objects.create(
+            nome="Sala Alternativa API",
+            bloco="Bloco B",
+            capacidade=3,
+        )
+
+        # -----------------------------
+        # Evento
+        # -----------------------------
+
+        cls.evento = Evento.objects.create(
+            nome="Semana de Tecnologia - API",
+            descricao="Evento utilizado nos testes da API.",
+            data_inicio=date(2026, 11, 10),
+            data_fim=date(2026, 11, 12),
+            inscricoes_abertas=True,
+            organizador=cls.organizador,
+        )
+
+        # -----------------------------
+        # Atividade
+        # -----------------------------
+
+        cls.atividade = Atividade.objects.create(
+            evento=cls.evento,
+            titulo="Introdução à API REST",
+            tipo=Atividade.Tipo.PALESTRA,
+            descricao="Atividade pública para os testes.",
+            responsavel="Equipe de teste",
+            sala=cls.sala,
+            inicio=data_hora(10, 9),
+            fim=data_hora(10, 10),
+        )
+
+    # ========================================================
+    # MÉTODOS AUXILIARES
+    # ========================================================
+
+    def autenticar(self, token: Token):
+        """Autentica o cliente usando Token Authentication."""
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Token {token.key}"
+        )
+
+    def inscrever_no_evento(self, participante):
+        """Cria uma inscrição diretamente no banco para preparar o teste."""
+        return InscricaoEvento.objects.create(
+            evento=self.evento,
+            participante=participante,
+        )
+
+    def criar_atividade(
+        self,
+        *,
+        titulo,
+        sala=None,
+        inicio=None,
+        fim=None,
+    ):
+        """Cria uma atividade para ser utilizada nos testes."""
+
+        inicio = inicio or data_hora(10, 11)
+        fim = fim or (inicio + timedelta(hours=1))
+
+        return Atividade.objects.create(
+            evento=self.evento,
+            titulo=titulo,
+            tipo=Atividade.Tipo.TREINAMENTO,
+            descricao=f"Descrição de {titulo}.",
+            responsavel="Responsável de teste",
+            sala=sala or self.sala_alternativa,
+            inicio=inicio,
+            fim=fim,
+        )
+
+    def url_inscrever_evento(self):
+        return reverse(
+            "api:inscricao-evento-list"
+        )
+
+
+    def url_inscrever_atividade(self):
+        return reverse(
+            "api:inscricao-atividade-list"
+        )
+
+
+# ============================================================
+# RF2 E RF3 — REGRAS DE NEGÓCIO PELA API
+# ============================================================
+
+class APIRegraDeNegocioTest(BaseAPITestCase):
+    """
+    Verifica as cinco regras de negócio através dos endpoints REST.
+
+    Cada regra é exercitada pelos caminhos permitidos e recusados.
+    """
+
+    # --------------------------------------------------------
+    # REGRA 1 — Inscrições não ultrapassam a capacidade da sala
+    # --------------------------------------------------------
+
+    def test_inscricao_em_atividade_com_vaga_e_permitida(self):
+        self.inscrever_no_evento(self.participante_a)
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": self.atividade.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            InscricaoAtividade.objects.filter(
+                inscricao_evento__participante=self.participante_a,
+                atividade=self.atividade,
+            ).exists()
+        )
+
+    def test_inscricao_em_atividade_lotada_e_recusada(self):
+        inscricao_a = self.inscrever_no_evento(self.participante_a)
+        inscricao_b = self.inscrever_no_evento(self.participante_b)
+
+        # A sala possui capacidade para duas pessoas.
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_a,
+            atividade=self.atividade,
+        )
+
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_b,
+            atividade=self.atividade,
+        )
+
+        self.inscrever_no_evento(self.participante_c)
+        self.autenticar(self.token_participante_c)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": self.atividade.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        # A terceira inscrição não deve ser persistida.
+        self.assertEqual(
+            self.atividade.inscricoes.count(),
+            2,
+        )
+
+        self.assertFalse(
+            self.atividade.inscricoes.filter(
+                inscricao_evento__participante=self.participante_c
+            ).exists()
+        )
+
+    # --------------------------------------------------------
+    # REGRA 2 — Participante não pode ter atividades simultâneas
+    # --------------------------------------------------------
+
+    def test_participante_pode_se_inscrever_em_atividade_sem_conflito(self):
+        atividade_seguinte = self.criar_atividade(
+            titulo="Atividade sem conflito",
+            sala=self.sala_alternativa,
+            inicio=data_hora(10, 10),
+            fim=data_hora(10, 11),
+        )
+
+        inscricao_evento = self.inscrever_no_evento(
+            self.participante_a
+        )
+
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_evento,
+            atividade=self.atividade,
+        )
+
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": atividade_seguinte.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            atividade_seguinte.inscricoes.filter(
+                inscricao_evento__participante=self.participante_a
+            ).exists()
+        )
+
+    def test_participante_nao_pode_se_inscrever_em_atividade_com_horario_sobreposto(self):
+        atividade_conflitante = self.criar_atividade(
+            titulo="Atividade com conflito",
+            sala=self.sala_alternativa,
+            inicio=data_hora(10, 9, 30),
+            fim=data_hora(10, 10, 30),
+        )
+
+        inscricao_evento = self.inscrever_no_evento(
+            self.participante_a
+        )
+
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_evento,
+            atividade=self.atividade,
+        )
+
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": atividade_conflitante.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        # A inscrição original continua sendo a única existente.
+        self.assertEqual(
+            InscricaoAtividade.objects.filter(
+                inscricao_evento=inscricao_evento
+            ).count(),
+            1,
+        )
+
+    # --------------------------------------------------------
+    # REGRA 3 — Não pode haver atividades simultâneas na sala
+    # --------------------------------------------------------
+
+    def test_api_permite_atividade_na_mesma_sala_em_horario_livre(self):
+        self.autenticar(self.token_organizador)
+
+        payload = {
+            "evento": self.evento.pk,
+            "titulo": "Atividade posterior na mesma sala",
+            "tipo": Atividade.Tipo.PALESTRA,
+            "descricao": "Horário sem conflito.",
+            "responsavel": "Responsável",
+            "sala": self.sala.pk,
+            "inicio": data_hora(10, 10).isoformat(),
+            "fim": data_hora(10, 11).isoformat(),
+        }
+
+        resposta = self.client.post(
+            reverse("api:atividade-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            Atividade.objects.filter(
+                titulo="Atividade posterior na mesma sala"
+            ).exists()
+        )
+
+    def test_api_recusa_duas_atividades_na_mesma_sala_em_horarios_sobrepostos(self):
+        self.autenticar(self.token_organizador)
+
+        quantidade_inicial = Atividade.objects.count()
+
+        payload = {
+            "evento": self.evento.pk,
+            "titulo": "Atividade com sala já ocupada",
+            "tipo": Atividade.Tipo.TREINAMENTO,
+            "descricao": "Tentativa de conflito de sala.",
+            "responsavel": "Responsável",
+            "sala": self.sala.pk,
+            "inicio": data_hora(10, 9, 30).isoformat(),
+            "fim": data_hora(10, 10, 30).isoformat(),
+        }
+
+        resposta = self.client.post(
+            reverse("api:atividade-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            Atividade.objects.count(),
+            quantidade_inicial,
+        )
+
+    # --------------------------------------------------------
+    # REGRA 4 — Só pode escolher atividade quem está no evento
+    # --------------------------------------------------------
+
+    def test_participante_inscrito_no_evento_pode_se_inscrever_em_atividade(self):
+        self.inscrever_no_evento(self.participante_a)
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": self.atividade.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            InscricaoAtividade.objects.filter(
+                inscricao_evento__participante=self.participante_a,
+                atividade=self.atividade,
+            ).exists()
+        )
+
+    def test_participante_nao_inscrito_no_evento_nao_pode_escolher_atividade(self):
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_atividade(),
+            data={"atividade": self.atividade.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+        self.assertEqual(
+            InscricaoAtividade.objects.count(),
+            0,
+        )
+
+    # --------------------------------------------------------
+    # REGRA 5 — Cancelar evento remove inscrições nas atividades
+    # --------------------------------------------------------
+
+    def test_cancelar_inscricao_no_evento_cancela_inscricoes_das_atividades(self):
+        atividade_a = self.criar_atividade(
+            titulo="Atividade para cancelamento A",
+            inicio=data_hora(10, 11),
+            fim=data_hora(10, 12),
+        )
+
+        atividade_b = self.criar_atividade(
+            titulo="Atividade para cancelamento B",
+            inicio=data_hora(10, 12),
+            fim=data_hora(10, 13),
+        )
+
+        inscricao_evento = self.inscrever_no_evento(
+            self.participante_a
+        )
+
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_evento,
+            atividade=atividade_a,
+        )
+
+        InscricaoAtividade.objects.create(
+            inscricao_evento=inscricao_evento,
+            atividade=atividade_b,
+        )
+
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.delete(
+            reverse(
+                "api:inscricao-evento-detail",
+                kwargs={"pk": inscricao_evento.pk},
+            )
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_204_NO_CONTENT,
+        )
+
+        self.assertFalse(
+            InscricaoEvento.objects.filter(
+                pk=inscricao_evento.pk
+            ).exists()
+        )
+
+        # on_delete=models.CASCADE deve remover as inscrições relacionadas.
+        self.assertFalse(
+            InscricaoAtividade.objects.filter(
+                atividade__in=[atividade_a, atividade_b]
+            ).exists()
+        )
+
+
+# ============================================================
+# RF4 — VALIDAÇÃO DOS MODELS PELA API
+# ============================================================
+
+class APIValidacaoTest(BaseAPITestCase):
+    """
+    Verifica se a API recusa dados que violam as validações
+    executadas pelos models através de ModeloValidado.save().
+    """
+
+    def setUp(self):
+        self.autenticar(self.token_organizador)
+
+    def test_api_recusa_evento_com_data_final_anterior_a_inicial(self):
+        payload = {
+            "nome": "Evento com período inválido",
+            "descricao": "A data final é anterior à inicial.",
+            "data_inicio": "2026-11-12",
+            "data_fim": "2026-11-10",
+            "inscricoes_abertas": True,
+        }
+
+        resposta = self.client.post(
+            reverse("api:evento-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+            resposta.data,
+        )
+
+        self.assertFalse(
+            Evento.objects.filter(
+                nome="Evento com período inválido"
+            ).exists()
+        )
+
+    def test_api_recusa_atividade_com_fim_anterior_ao_inicio(self):
+        payload = {
+            "evento": self.evento.pk,
+            "titulo": "Atividade com intervalo inválido",
+            "tipo": Atividade.Tipo.PALESTRA,
+            "descricao": "O fim ocorre antes do início.",
+            "responsavel": "Responsável",
+            "sala": self.sala_alternativa.pk,
+            "inicio": data_hora(10, 10).isoformat(),
+            "fim": data_hora(10, 9).isoformat(),
+        }
+
+        resposta = self.client.post(
+            reverse("api:atividade-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+            resposta.data,
+        )
+
+        self.assertFalse(
+            Atividade.objects.filter(
+                titulo="Atividade com intervalo inválido"
+            ).exists()
+        )
+
+    def test_api_recusa_atividade_fora_do_periodo_do_evento(self):
+        payload = {
+            "evento": self.evento.pk,
+            "titulo": "Atividade fora do período",
+            "tipo": Atividade.Tipo.TREINAMENTO,
+            "descricao": "A atividade ocorre após o término do evento.",
+            "responsavel": "Responsável",
+            "sala": self.sala_alternativa.pk,
+            "inicio": data_hora(13, 9).isoformat(),
+            "fim": data_hora(13, 10).isoformat(),
+        }
+
+        resposta = self.client.post(
+            reverse("api:atividade-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_400_BAD_REQUEST,
+            resposta.data,
+        )
+
+        self.assertFalse(
+            Atividade.objects.filter(
+                titulo="Atividade fora do período"
+            ).exists()
+        )
+
+
+# ============================================================
+# RF10 — API PÚBLICA E SABOTAGEM 8
+# ============================================================
+
+class APIPublicaTest(BaseAPITestCase):
+    """
+    Verifica os endpoints públicos e os campos disponibilizados
+    pelos serializers.
+    """
+
+    def test_lista_de_eventos_e_publica_e_retorna_dados_esperados(self):
+        resposta = self.client.get(
+            reverse("api:evento-list")
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_200_OK,
+        )
+
+        eventos = resposta.data["results"]
+
+        evento = next(
+            item
+            for item in eventos
+            if item["id"] == self.evento.pk
+        )
+
+        self.assertEqual(
+            evento["nome"],
+            self.evento.nome,
+        )
+
+        self.assertEqual(
+            set(evento.keys()),
+            {
+                "id",
+                "nome",
+                "descricao",
+                "data_inicio",
+                "data_fim",
+                "inscricoes_abertas",
+                "organizador",
+            },
+        )
+
+        self.assertEqual(
+            evento["organizador"],
+            self.organizador.username,
+        )
+
+        self.assertNotIn("organizador_id", evento)
+        self.assertNotIn("email", evento)
+        self.assertNotIn("participante", evento)
+
+def test_detalhe_publico_retorna_programacao_sem_dados_privados(self):
+    resposta = self.client.get(
+        reverse(
+            "api:programacao-evento",
+            kwargs={"evento_id": self.evento.pk},
+        )
+    )
+
+    self.assertEqual(
+        resposta.status_code,
+        status.HTTP_200_OK,
+    )
+
+    # A resposta contém evento e atividades.
+    self.assertEqual(
+        set(resposta.data.keys()),
+        {
+            "evento",
+            "atividades",
+        },
+    )
+
+    # Verifica os dados públicos do evento.
+    evento = resposta.data["evento"]
+
+    self.assertEqual(
+        evento["nome"],
+        self.evento.nome,
+    )
+
+    self.assertEqual(
+        set(evento.keys()),
+        {
+            "id",
+            "nome",
+            "descricao",
+            "data_inicio",
+            "data_fim",
+            "inscricoes_abertas",
+            "organizador",
+        },
+    )
+
+    self.assertEqual(
+        evento["organizador"],
+        self.organizador.username,
+    )
+
+    self.assertNotIn("organizador_id", evento)
+    self.assertNotIn("email", evento)
+    self.assertNotIn("participante", evento)
+
+    # Verifica as atividades da programação.
+    self.assertEqual(
+        len(resposta.data["atividades"]),
+        1,
+    )
+
+    atividade = resposta.data["atividades"][0]
+
+    self.assertEqual(
+        atividade["titulo"],
+        self.atividade.titulo,
+    )
+
+    self.assertEqual(
+        atividade["sala_nome"],
+        self.sala.nome,
+    )
+
+    self.assertEqual(
+        set(atividade.keys()),
+        {
+            "id",
+            "evento",
+            "titulo",
+            "tipo",
+            "descricao",
+            "responsavel",
+            "sala",
+            "sala_nome",
+            "inicio",
+            "fim",
+            "vagas_restantes",
+        },
+    )
+
+    self.assertNotIn("email", atividade)
+    self.assertNotIn("participante", atividade)
+    self.assertNotIn("inscricoes", atividade)
+
+    def test_lista_de_atividades_e_publica(self):
+        resposta = self.client.get(
+            reverse("api:atividade-list")
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_200_OK,
+        )
+
+        atividades = resposta.data["results"]
+
+        atividade = next(
+            item
+            for item in atividades
+            if item["id"] == self.atividade.pk
+        )
+
+        self.assertEqual(
+            atividade["sala_nome"],
+            self.sala.nome,
+        )
+
+        self.assertEqual(
+            set(atividade.keys()),
+            {
+                "id",
+                "evento",
+                "titulo",
+                "tipo",
+                "descricao",
+                "responsavel",
+                "sala",
+                "sala_nome",
+                "inicio",
+                "fim",
+                "vagas_restantes",
+            },
+        )
+
+        self.assertNotIn("email", atividade)
+        self.assertNotIn("participante", atividade)
+        self.assertNotIn("inscricoes", atividade)
+
+    def test_consulta_de_salas_e_publica(self):
+        resposta = self.client.get(
+            reverse("api:sala-list")
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_200_OK,
+        )
+
+        salas = resposta.data["results"]
+
+        self.assertTrue(
+            any(
+                item["nome"] == self.sala.nome
+                for item in salas
+            )
+        )
+
+
+# ============================================================
+# RF11 — API PROTEGIDA
+# ============================================================
+
+class APIProtegidaTest(BaseAPITestCase):
+    """
+    Testa autenticação e autorização das operações protegidas.
+    """
+
+    def test_endpoint_protegido_sem_token_responde_401(self):
+        payload = {
+            "nome": "Evento sem token",
+            "descricao": "Não deve ser criado.",
+            "data_inicio": "2026-11-10",
+            "data_fim": "2026-11-12",
+            "inscricoes_abertas": True,
+        }
+
+        resposta = self.client.post(
+            reverse("api:evento-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+        self.assertFalse(
+            Evento.objects.filter(
+                nome="Evento sem token"
+            ).exists()
+        )
+
+    def test_agenda_sem_token_retorna_401(self):
+        resposta = self.client.get(
+            reverse("api:agenda-participante")
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_token_invalido_retorna_401(self):
+        self.client.credentials(
+            HTTP_AUTHORIZATION="Token token-invalido"
+        )
+
+        resposta = self.client.get(
+            reverse("api:agenda-participante")
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_usuario_autenticado_sem_permissao_nao_cria_evento(self):
+        self.autenticar(self.token_participante_a)
+
+        payload = {
+            "nome": "Evento de participante",
+            "descricao": "Não deve ser criado.",
+            "data_inicio": "2026-11-10",
+            "data_fim": "2026-11-12",
+            "inscricoes_abertas": True,
+        }
+
+        resposta = self.client.post(
+            reverse("api:evento-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertFalse(
+            Evento.objects.filter(
+                nome="Evento de participante"
+            ).exists()
+        )
+
+    def test_participante_nao_pode_criar_atividade(self):
+        self.autenticar(self.token_participante_a)
+
+        quantidade_inicial = Atividade.objects.count()
+
+        payload = {
+            "evento": self.evento.pk,
+            "titulo": "Atividade de participante",
+            "tipo": Atividade.Tipo.PALESTRA,
+            "descricao": "Não deve ser criada.",
+            "responsavel": "Participante",
+            "sala": self.sala_alternativa.pk,
+            "inicio": data_hora(10, 11).isoformat(),
+            "fim": data_hora(10, 12).isoformat(),
+        }
+
+        resposta = self.client.post(
+            reverse("api:atividade-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.assertEqual(
+            Atividade.objects.count(),
+            quantidade_inicial,
+        )
+
+    def test_token_do_organizador_permite_criar_evento(self):
+        self.autenticar(self.token_organizador)
+
+        payload = {
+            "nome": "Evento criado pela API",
+            "descricao": "Criação autorizada.",
+            "data_inicio": "2026-11-10",
+            "data_fim": "2026-11-12",
+            "inscricoes_abertas": True,
+        }
+
+        resposta = self.client.post(
+            reverse("api:evento-list"),
+            data=payload,
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            Evento.objects.filter(
+                nome="Evento criado pela API",
+                organizador=self.organizador,
+            ).exists()
+        )
+
+    def test_participante_autenticado_pode_se_inscrever_no_evento(self):
+        self.autenticar(self.token_participante_a)
+
+        resposta = self.client.post(
+            self.url_inscrever_evento(),
+            data={"evento": self.evento.pk},
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_201_CREATED,
+            resposta.data,
+        )
+
+        self.assertTrue(
+            InscricaoEvento.objects.filter(
+                evento=self.evento,
+                participante=self.participante_a,
+            ).exists()
+        )
+
+    def test_organizador_nao_edita_evento_de_outro(self):
+        nome_original = self.evento.nome
+
+        self.autenticar(
+            self.token_outro_organizador
+        )
+
+        resposta = self.client.patch(
+            reverse(
+                "api:evento-detail",
+                kwargs={"pk": self.evento.pk},
+            ),
+            data={
+                "nome": "Nome alterado indevidamente"
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        self.evento.refresh_from_db()
+
+        self.assertEqual(
+            self.evento.nome,
+            nome_original,
+        )
+
+    def test_usuario_nao_cancela_inscricao_de_outra_pessoa(self):
+        inscricao = self.inscrever_no_evento(
+            self.participante_a
+        )
+
+        self.autenticar(
+            self.token_participante_b
+        )
+
+        resposta = self.client.delete(
+            reverse(
+                "api:inscricao-evento-detail",
+                kwargs={"pk": inscricao.pk},
+            )
+        )
+
+        self.assertEqual(
+            resposta.status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        # O registro original deve permanecer intacto.
+        self.assertTrue(
+            InscricaoEvento.objects.filter(
+                pk=inscricao.pk
+            ).exists()
+        )
+
+
+# ============================================================
+# RF12 — CONSULTAS AO BANCO
+# ============================================================
+
+class APIConsultasTest(BaseAPITestCase):
+    """
+    Verifica se a consulta da programação pública mantém
+    um número constante de consultas ao banco.
+
+    O objetivo é evitar o problema N+1.
+    """
+
+    def test_programacao_publica_usa_numero_fixo_de_consultas(self):
+        url = reverse(
+            "api:programacao-evento",
+            kwargs={"evento_id": self.evento.pk},
+        )
+
+        # ------------------------------------------
+        # Cenário 1: somente uma atividade
+        # ------------------------------------------
+
+        with self.assertNumQueries(2):
+            resposta_pequena = self.client.get(url)
+
+        self.assertEqual(
+            resposta_pequena.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(resposta_pequena.data["atividades"]),
+            1,
+        )
+
+        # ------------------------------------------
+        # Cenário 2: onze atividades
+        # ------------------------------------------
+
+        for indice in range(10):
+            inicio = data_hora(10, 11 + indice)
+
+            self.criar_atividade(
+                titulo=f"Atividade adicional {indice + 1}",
+                sala=self.sala_alternativa,
+                inicio=inicio,
+                fim=inicio + timedelta(minutes=30),
+            )
+
+        with self.assertNumQueries(2):
+            resposta_grande = self.client.get(url)
+
+        self.assertEqual(
+            resposta_grande.status_code,
+            status.HTTP_200_OK,
+        )
+
+        self.assertEqual(
+            len(resposta_grande.data["atividades"]),
+            11,
+        )

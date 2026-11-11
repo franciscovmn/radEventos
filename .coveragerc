@@ -1,0 +1,5 @@
+[run]
+source = inscricoes, api
+omit =
+    */migrations/*
+    */tests/*

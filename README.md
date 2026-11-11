@@ -1,16 +1,17 @@
 # Inscrições em eventos do campus
 
-Atividade 06 de Rapid Application Development (RAD), curso de Sistemas para Internet, IFPB: uma API REST ao lado do sistema de inscrições em eventos do campus.
+Projeto de Rapid Application Development (RAD), curso de Sistemas para Internet, IFPB: site em HTML e API REST do sistema de inscrições em eventos do campus. A atividade 08 acrescentou a suíte de testes automatizados, sem nenhuma funcionalidade nova.
 
 ## Integrantes
 
 - Francisco Viana Maia Neto.
 - Murilo Maciel Rodrigues.
 
-Divisão do trabalho:
+Como dividimos o trabalho:
 
-- Francisco: configuração do DRF, token, serializers e ViewSets de salas, eventos, atividades e inscrições, permissões, tratamento de erros, testes da escrita e este README.
-- Murilo: a ideia de mover as regras e as operações de inscrição das views para uma camada de serviços compartilhada com a API, com o rascunho dessa camada (`obter_agenda_participante` e `obter_dados_evento` vêm dele), e a parte de leitura da API, com a programação do evento, a agenda do participante, a busca e a ordenação das atividades, a documentação OpenAPI e os testes dessa parte.
+Na atividade 06, fiquei com a configuração do DRF, o token, os serializers e ViewSets de salas, eventos, atividades e inscrições, as permissões, o tratamento de erros, os testes da escrita e este README. Minha dupla propôs mover as regras e as operações de inscrição das views para uma camada de serviços compartilhada com a API, fez o rascunho dessa camada (`obter_agenda_participante` e `obter_dados_evento`) e cuidou da leitura da API: programação do evento, agenda do participante, busca e ordenação das atividades, documentação OpenAPI e os testes dessa parte.
+
+Na atividade 08, minha dupla escreveu os primeiros testes das regras pela API, da validação, da porta aberta, da porta fechada e das consultas. Fiquei com a organização do pacote `tests/`, os testes de models, formulários e site e a tabela de sabotagem.
 
 ## Como executar
 
@@ -175,8 +176,8 @@ Havia duas saídas: reescrever as regras nos serializers ou mover cada regra par
 | 5. Cancelar no evento cancela nas atividades | `on_delete=CASCADE` em `InscricaoAtividade.inscricao_evento` |
 
 - `ModeloValidado.save()` executa `full_clean()` dentro de uma transação. Qualquer caminho que grave no banco passa pelas mesmas validações: formulário, Admin, serializer ou shell.
-- Os serializers apenas declaram campos. O `ModelSerializer` chama o `save()` do model, e `api/excecoes.py` converte o `ValidationError` do Django em resposta 400 com JSON. Nenhuma mensagem de regra é escrita na API.
-- A ideia de extrair as operações para uma camada de serviços foi do Murilo. Operações que envolvem mais de um model ficam em `inscricoes/servicos.py`: inscrever no evento, inscrever em atividade e os dois cancelamentos. As views do site e os serializers e viewsets da API chamam essas mesmas funções, que fazem a consulta e a gravação em uma única transação.
+- Os serializers apenas declaram campos. O `ModelSerializer` chama o `save()` do model, e `api/excecoes.py` converte o `ValidationError` do Django em resposta 400 com JSON. Nenhuma mensagem das cinco regras é escrita na API.
+- Operações que envolvem mais de um model ficam em `inscricoes/servicos.py`: inscrever no evento, inscrever em atividade e os dois cancelamentos. As views do site e os serializers e viewsets da API chamam essas mesmas funções, que fazem a consulta e a gravação em uma única transação.
 - A permissão de organizador usa `Evento.pode_ser_gerenciado_por`, chamada pelas views do site e pela permissão `OrganizadorDoEvento` da API.
 - O organizador do evento e o participante da inscrição vêm de `request.user`. Os campos são somente leitura nos serializers, e qualquer valor enviado no corpo é ignorado.
 - As vagas restantes são calculadas por `Count` sobre as inscrições, na consulta `com_vagas()`, ou contadas na hora após uma gravação. Nenhum campo guarda esse número.
@@ -209,23 +210,77 @@ curl -i -X POST http://127.0.0.1:8000/api/inscricoes/atividades/ \
 
 No site, o mesmo participante enviou `POST /atividades/1/inscrever/` e foi redirecionado ao evento com a mensagem "Esta atividade está lotada.". Os dois caminhos chamam `servicos.inscrever_em_atividade`, que cria a inscrição com `InscricaoAtividade.objects.create`. Esse `create` chama `save()`, que executa `full_clean()` e chega ao mesmo `InscricaoAtividade.clean`. Há uma única cópia da regra.
 
-## Verificação
+## Testes automatizados
 
 ```bash
-python manage.py check
 python manage.py test
+python manage.py test --shuffle
+python manage.py test inscricoes.tests.test_models
+coverage run manage.py test
+coverage report
 ```
 
-Os testes usam um banco separado. Os 29 de `inscricoes/tests.py` cobrem o site: os 27 critérios de aceitação, autenticação, propriedade das rotas, lotação, conflitos entre eventos, cancelamentos, isolamento da agenda, painel e proteção CSRF. Também verificam intervalos adjacentes, os casos de sobreposição, edições que invalidariam inscrições e envios simultâneos para a última vaga, para horários conflitantes e para a mesma sala.
+A suíte tem 177 testes e leva cerca de 13 segundos. Cada teste cria os próprios dados em um banco separado, então ela passa com o `db.sqlite3` apagado.
 
-Os 7 de `api/tests_leitura.py` cobrem a leitura: lista de eventos e programação públicas, nome da sala e vagas restantes, agenda com token, isolada por usuário e em ordem, vagas da agenda considerando outros inscritos, paginação, busca, ordenação e documentação OpenAPI.
+| Arquivo em `inscricoes/tests/` | Testes | Assunto |
+| --- | --- | --- |
+| `test_models.py` | 27 | Cinco regras no model, validação com `full_clean()` e edições com inscritos |
+| `test_forms.py` | 9 | `EventoForm` e `AtividadeForm` instanciados sem view |
+| `test_views.py` | 60 | Cinco regras pelo site, programação, inscrição e cancelamento, anônimo, autorização e consultas |
+| `test_api.py` | 76 | Cinco regras pela API, porta aberta, porta fechada e consultas |
+| `test_concorrencia.py` | 5 | Envios simultâneos para a última vaga, a mesma agenda e a mesma sala |
 
-Os 43 de `api/tests.py` cobrem a escrita e as inscrições na API: obtenção de token, recusa de sessão e de token inválido, leitura pública, permissões de organizador, propriedade de eventos e atividades, erros de validação em JSON, inscrição e cancelamento no evento e nas atividades, lotação, conflitos de horário, dono da inscrição e envios simultâneos para a última vaga e para horários conflitantes.
+`base.py` guarda os cenários compartilhados. Os testes das cinco regras começam com `test_regra1` a `test_regra5`: são 30, sendo 10 de recusa e 10 de aceite pelas duas portas e mais 10 no model.
+
+### Tabela de sabotagem
+
+Fiz cada linha em uma cópia do projeto, uma sabotagem por vez: apliquei a alteração, rodei a suíte inteira e desfiz. A coluna do meio traz o teste de cada porta na suíte final e o total de testes que caem. Fiz a primeira rodada na suíte de 102 testes que existia antes do pacote `tests/`.
+
+| Sabotagem | Teste que falhou | Verde na 1ª rodada? |
+| --- | --- | --- |
+| 1. Capacidade da sala | `test_regra1_site_recusa_quando_a_sala_esta_cheia`, `test_regra1_api_recusa_quando_a_sala_esta_cheia` (8 no total) | não |
+| 2. Horário sobreposto | `test_regra2_site_recusa_atividade_em_horario_sobreposto`, `test_regra2_api_recusa_atividade_em_horario_sobreposto` (8 no total) | não |
+| 3. Sala ocupada | `test_regra3_site_recusa_mesma_sala_em_horario_sobreposto`, `test_regra3_api_recusa_mesma_sala_em_horario_sobreposto` (9 no total) | não |
+| 4. Inscrição prévia no evento | `test_regra4_site_recusa_quem_nao_esta_inscrito_no_evento`, `test_regra4_api_recusa_quem_nao_esta_inscrito_no_evento` (4 no total) | não |
+| 5. Cancelamento em cascata | `test_regra5_site_cancelar_no_evento_cancela_as_atividades`, `test_regra5_api_cancelar_no_evento_cancela_as_atividades` (5 no total) | não |
+| 6. `render` depois do POST | `test_inscrever_na_atividade_grava_redireciona_e_confirma`, `test_inscrever_no_evento_grava_redireciona_e_confirma` | não, mas na atividade só por acidente |
+| 7. Verificação de dono | `test_organizador_nao_edita_evento_de_outro_organizador` (site), `test_organizador_nao_edita_evento_de_outro` (API) | não |
+| 8. Campo extra na porta aberta | `test_lista_de_atividades_e_publica_e_retorna_so_os_campos_esperados`, `test_programacao_publica_retorna_dados_esperados_e_nada_privado` | sim, no `AtividadeSerializer` |
+| 9. `select_related` da programação | `test_programacao_publica_usa_numero_fixo_de_consultas` (API), `test_programacao_do_site_faz_as_mesmas_consultas_com_mais_atividades` (site) | não, mas só a API tinha teste |
+
+Como refazer cada uma:
+
+1. `InscricaoAtividade.clean`: comentar o `if` que levanta `Esta atividade está lotada.`
+2. `InscricaoAtividade.clean`: comentar o `if` que levanta `Esta atividade conflita com outra inscrição na sua agenda.`
+3. `Atividade.clean`: comentar o `if` que usa `sobrepostas`.
+4. `servicos.inscrever_em_atividade`: comentar o `if inscricao is None`.
+5. `InscricaoAtividade.inscricao_evento`: trocar `models.CASCADE` por `models.DO_NOTHING`. O teste aparece como F e como E, porque os registros órfãos também quebram a chave estrangeira no fim do teste.
+6. `inscrever_atividade` e, em outra execução, `inscrever_evento`: trocar o `redirect` por `render` de `eventos/detalhe.html`.
+7. `EventoUpdateView`: tirar `ObjetoDoOrganizadorMixin`. Na API: tirar `OrganizadorDoEvento()` de `get_permissions`.
+8. `AtividadeSerializer`: acrescentar `organizador_id` com `source="evento.organizador_id"`. Em outra execução, `EventoSerializer`: acrescentar `organizador_email`.
+9. `AtividadeQuerySet.com_vagas`: tirar o `select_related`. Em outra execução, `programacao_evento`: tirar o `select_related("organizador")`.
+
+### O que a primeira rodada mostrou
+
+- Sabotagem 8: o campo novo no `AtividadeSerializer` não derrubou nada. Três testes do commit `6360b9a` estavam com a indentação errada, fora da classe, e o Django nunca os executou. Corrigi a indentação e eles agora são `test_programacao_publica_retorna_dados_esperados_e_nada_privado`, `test_lista_de_atividades_e_publica_e_retorna_so_os_campos_esperados` e `test_consulta_de_salas_e_publica_e_retorna_so_os_campos_esperados`.
+- Sabotagem 6: no POST de inscrição em atividade, só caíram os dois testes de concorrência, que comparam o código 302 por outro motivo. Acrescentei a classe `InscricaoECancelamentoTests`, que confere o banco, o redirecionamento e a mensagem.
+- Sabotagem 9: a programação do site não tinha nenhum teste de consultas. Acrescentei `test_programacao_do_site_faz_as_mesmas_consultas_com_mais_atividades`.
+- Sabotagem 4: sem a verificação do serviço, o model ainda recusa porque `inscricao_evento` fica nulo. A resposta continua sendo 400, com outra mensagem, e por isso o teste que olhava só o status passou. Fiz esse teste conferir a mensagem.
+
+### Cobertura
+
+Medi 97% de cobertura: 622 instruções, 16 sem execução, sem contar migrations e testes. A suíte de 102 testes da primeira rodada também dava 97%, e o `api/serializers.py` já estava em 100%. Ou seja, o número não mudou com 75 testes a mais, e foi com esses mesmos 97% que um campo novo no serializer passou despercebido. Cobertura diz que a linha rodou, não que alguém conferiu o resultado. O que a tabela de sabotagem mediu foi outra coisa, e os testes que ela me fez escrever não moveram o percentual. As 16 linhas restantes são os dois `save_model` do Admin, a ordenação padrão quando a API recebe um `ordering` inválido e validações de edição, como a troca para uma sala menor que o número de inscritos (`Atividade.clean`). Elas continuam sem teste.
+
+### Regras escritas em dois lugares
+
+Nenhuma das cinco regras tinha a recusa escrita duas vezes. As sabotagens de 1 a 5 mostram isso: uma única alteração derrubou ao mesmo tempo os testes do site e os da API. O que existe é uma cópia parcial: `servicos.obter_dados_evento` repete a comparação de horário da regra 2 para esconder o botão de inscrição. Ela só decide o que aparece na tela, e quem recusa é `InscricaoAtividade.clean`. Como esta atividade não muda comportamento, mantive a cópia e registrei aqui.
+
+Fora das cinco regras, `AtividadeSerializer.validate_evento` recusa qualquer troca de evento, enquanto `Atividade.clean` só recusa quando há inscritos. O formulário do site não tem esse campo, então a recusa mais rígida só existe na API.
 
 ## Requisitos pendentes
 
-Nenhum dos requisitos obrigatórios. O desafio opcional da programação em uma única requisição não foi implementado.
+Nenhum dos requisitos obrigatórios. Não fiz os desafios opcionais da atividade 06 nem os desafios A e B da atividade 08.
 
 ## Entrega
 
-Inclua o projeto completo, `requirements.txt`, migrations, este README e `db.sqlite3` em um repositório público no GitHub. A pasta `.venv` fica fora do controle de versão. O banco está incluído por exigência desta atividade.
+O repositório público no GitHub traz o projeto completo, `requirements.txt`, migrations, este README e o `db.sqlite3`. A pasta `.venv` fica fora do controle de versão. Mantive o banco no repositório por exigência da atividade 06.
